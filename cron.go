@@ -14,6 +14,7 @@ type Cron struct {
 	entries  []*Entry
 	stop     chan struct{}
 	add      chan *Entry
+	remove   chan *Entry
 	snapshot chan []*Entry
 	running  bool
 }
@@ -71,6 +72,7 @@ func New() *Cron {
 	return &Cron{
 		entries:  nil,
 		add:      make(chan *Entry),
+		remove:   make(chan *Entry),
 		stop:     make(chan struct{}),
 		snapshot: make(chan []*Entry),
 		running:  false,
@@ -98,17 +100,18 @@ func (c *Cron) AddJob(spec string, cmd Job) error {
 }
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) Schedule(schedule Schedule, cmd Job) {
+func (c *Cron) Schedule(schedule Schedule, cmd Job) *Entry {
 	entry := &Entry{
 		Schedule: schedule,
 		Job:      cmd,
 	}
 	if !c.running {
 		c.entries = append(c.entries, entry)
-		return
+		return entry
 	}
 
 	c.add <- entry
+	return entry
 }
 
 // Entries returns a snapshot of the cron entries.
@@ -165,10 +168,18 @@ func (c *Cron) run() {
 		case newEntry := <-c.add:
 			c.entries = append(c.entries, newEntry)
 			newEntry.Next = newEntry.Schedule.Next(now)
-
+		case ne := <-c.remove:
+			i := -1
+			for k, e := range c.entries {
+				if e == ne {
+					i = k
+				}
+			}
+			if i > -1 {
+				c.entries = append(c.entries[:i], c.entries[i+1:]...)
+			}
 		case <-c.snapshot:
 			c.snapshot <- c.entrySnapshot()
-
 		case <-c.stop:
 			return
 		}
@@ -182,6 +193,11 @@ func (c *Cron) run() {
 func (c *Cron) Stop() {
 	c.stop <- struct{}{}
 	c.running = false
+}
+
+// Remove the entry from cron entries
+func (c *Cron) Remove(e *Entry) {
+	c.remove <- e
 }
 
 // entrySnapshot returns a copy of the current cron entry list.
