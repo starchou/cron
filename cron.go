@@ -167,7 +167,7 @@ func (c *Cron) run() {
 
 		case newEntry := <-c.add:
 			c.entries = append(c.entries, newEntry)
-			newEntry.Next = newEntry.Schedule.Next(now)
+			newEntry.Next = newEntry.Schedule.Next(time.Now().Local())
 		case ne := <-c.remove:
 			i := -1
 			for k, e := range c.entries {
